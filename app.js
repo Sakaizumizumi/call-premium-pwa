@@ -5,7 +5,9 @@ const DEFAULT_INPUTS = {
   "days-3": "75",
   volatility: "40%",
   "risk-free-rate": "0%",
-  strikes: "1288:1160:-8",
+  "strike-max": "1288",
+  "strike-min": "1160",
+  "strike-step": "8",
 };
 
 const DEFAULT_OPTION_TYPE = "call";
@@ -103,118 +105,29 @@ function collectDays() {
   return values;
 }
 
-function parseStrikes(text) {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    throw new Error("请输入行权价。");
-  }
+function collectStrikes() {
+  const maxStrike = positiveNumber("strike-max", "行权价最大值");
+  const minStrike = positiveNumber("strike-min", "行权价最小值");
+  const step = positiveNumber("strike-step", "步长");
 
-  const pythonRangeMatch = trimmed.match(/^range\(([^)]*)\)$/i);
-  if (pythonRangeMatch) {
-    return parsePythonRange(pythonRangeMatch[1]);
-  }
-
-  const rangeMatch = trimmed.match(/^\s*(-?\d+(?:\.\d+)?)\s*:\s*(-?\d+(?:\.\d+)?)(?:\s*:\s*(-?\d+(?:\.\d+)?))?\s*$/);
-  if (rangeMatch) {
-    const start = Number(rangeMatch[1]);
-    const stop = Number(rangeMatch[2]);
-    const step = rangeMatch[3] === undefined ? (stop >= start ? 1 : -1) : Number(rangeMatch[3]);
-    return inclusiveRange(start, stop, step);
-  }
-
-  const values = trimmed
-    .split(/[\s,;，、]+/)
-    .filter(Boolean)
-    .map((part) => Number(part));
-
-  if (values.length === 0 || values.some((value) => !Number.isFinite(value))) {
-    throw new Error("行权价需要是数字，或使用 1288:1160:-8 这样的区间。");
-  }
-  validateStrikes(values);
-  return values;
-}
-
-function parsePythonRange(argsText) {
-  const args = argsText
-    .split(",")
-    .map((arg) => arg.trim())
-    .filter(Boolean)
-    .map((arg) => Number(arg));
-
-  if (![1, 2, 3].includes(args.length) || args.some((value) => !Number.isFinite(value))) {
-    throw new Error("range() 需要 1 到 3 个数字参数。");
-  }
-
-  let start = 0;
-  let stop = args[0];
-  let step = 1;
-  if (args.length === 2) {
-    [start, stop] = args;
-  }
-  if (args.length === 3) {
-    [start, stop, step] = args;
-  }
-  if (step === 0) {
-    throw new Error("行权价区间步长不能为 0。");
+  if (maxStrike < minStrike) {
+    throw new Error("行权价最大值不能小于最小值。");
   }
 
   const values = [];
-  if (step > 0) {
-    for (let value = start; value < stop; value += step) {
-      values.push(displayNumber(value));
-      limitRangeSize(values);
-    }
-  } else {
-    for (let value = start; value > stop; value += step) {
-      values.push(displayNumber(value));
-      limitRangeSize(values);
+  const tolerance = step / 1_000_000;
+  for (let strike = maxStrike; strike >= minStrike - tolerance; strike -= step) {
+    values.push(displayNumber(strike));
+    if (values.length > 5000) {
+      throw new Error("行权价数量过多，请调大步长或缩小区间。");
     }
   }
-  validateStrikes(values);
+
+  const lastValue = values[values.length - 1];
+  if (lastValue !== minStrike && Math.abs(lastValue - minStrike) > tolerance) {
+    values.push(displayNumber(minStrike));
+  }
   return values;
-}
-
-function inclusiveRange(start, stop, step) {
-  if (step === 0) {
-    throw new Error("行权价区间步长不能为 0。");
-  }
-  if (start < stop && step < 0) {
-    throw new Error("递增区间需要正步长。");
-  }
-  if (start > stop && step > 0) {
-    throw new Error("递减区间需要负步长。");
-  }
-
-  const values = [];
-  const tolerance = Math.abs(step) / 1_000_000;
-  if (step > 0) {
-    for (let value = start; value <= stop + tolerance; value += step) {
-      values.push(displayNumber(value));
-      limitRangeSize(values);
-    }
-  } else {
-    for (let value = start; value >= stop - tolerance; value += step) {
-      values.push(displayNumber(value));
-      limitRangeSize(values);
-    }
-  }
-  validateStrikes(values);
-  return values;
-}
-
-function validateStrikes(values) {
-  if (values.length === 0) {
-    throw new Error("请输入至少一个行权价。");
-  }
-  if (values.some((value) => value <= 0)) {
-    throw new Error("行权价必须全部大于 0。");
-  }
-}
-
-function limitRangeSize(values) {
-  if (values.length > 5000) {
-    throw new Error("行权价数量过多，请缩小区间。");
-  }
 }
 
 function normalCdf(x) {
@@ -309,7 +222,7 @@ function calculateAll() {
   const columns = buildPremiumColumns(days, optionType);
   const volatility = parsePercent("volatility", "隐含波动率");
   const riskFreeRate = parsePercent("risk-free-rate", "无风险利率");
-  const strikes = parseStrikes(getInput("strikes").value);
+  const strikes = collectStrikes();
 
   const rows = strikes.map((strike) => ({
     strike: displayNumber(strike),

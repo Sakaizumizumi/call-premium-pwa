@@ -79,12 +79,22 @@
             <input id="risk-free-rate" name="risk-free-rate" inputmode="decimal" autocomplete="off" value="0%" />
           </label>
 
-          <label class="field">
-            <span>行权价</span>
-            <input id="strikes" name="strikes" autocomplete="off" value="1288:1160:-8" />
-          </label>
+          <div class="days-grid" aria-label="行权价区间">
+            <label class="field">
+              <span>行权价最大值</span>
+              <input id="strike-max" name="strike-max" inputmode="decimal" autocomplete="off" value="1288" />
+            </label>
+            <label class="field">
+              <span>行权价最小值</span>
+              <input id="strike-min" name="strike-min" inputmode="decimal" autocomplete="off" value="1160" />
+            </label>
+            <label class="field">
+              <span>步长</span>
+              <input id="strike-step" name="strike-step" inputmode="decimal" autocomplete="off" value="8" />
+            </label>
+          </div>
 
-          <div class="field-note">行权价支持 1288,1280,1272 或 1288:1160:-8</div>
+          <div class="field-note">按最大值到最小值生成行权价，步长必须大于 0。</div>
 
           <div class="button-row">
             <button class="primary-button" type="submit">计算</button>
