@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Black-76 calculator icon">
+  <rect width="512" height="512" rx="96" fill="#1f6f5b" />
+  <rect x="72" y="86" width="368" height="340" rx="42" fill="#f5f7f4" />
+  <rect x="104" y="124" width="304" height="64" rx="16" fill="#22577a" />
+  <path d="M126 326c42-54 76-78 114-72 34 5 49 35 82 35 28 0 50-20 68-48" fill="none" stroke="#1f6f5b" stroke-width="30" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M126 374h260" stroke="#18211f" stroke-width="24" stroke-linecap="round" opacity="0.22" />
+  <text x="256" y="170" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="54" font-weight="800" fill="#ffffff">B76</text>
+</svg>

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1f6f5b" />
+    <title>Black-76 看涨期权权利金计算器</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-icon" src="icons/icon.svg" alt="" aria-hidden="true" />
+          <div>
+            <h1>Black-76 看涨期权权利金计算器</h1>
+            <p>期货期权多期限报价</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <span id="online-status" class="status-pill">在线</span>
+          <button id="install-button" class="ghost-button" type="button" hidden>安装</button>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="计算器">
+        <form id="calculator-form" class="input-panel">
+          <div class="panel-title">输入</div>
+
+          <label class="field">
+            <span>期货价格</span>
+            <input id="future-price" name="future-price" inputmode="decimal" autocomplete="off" value="1025" />
+          </label>
+
+          <div class="days-grid" aria-label="到期天数">
+            <label class="field">
+              <span>到期天数 1</span>
+              <input id="days-1" name="days-1" inputmode="decimal" autocomplete="off" value="55" />
+            </label>
+            <label class="field">
+              <span>到期天数 2</span>
+              <input id="days-2" name="days-2" inputmode="decimal" autocomplete="off" value="65" />
+            </label>
+            <label class="field">
+              <span>到期天数 3</span>
+              <input id="days-3" name="days-3" inputmode="decimal" autocomplete="off" value="75" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>隐含波动率</span>
+            <input id="volatility" name="volatility" inputmode="decimal" autocomplete="off" value="40%" />
+          </label>
+
+          <label class="field">
+            <span>无风险利率</span>
+            <input id="risk-free-rate" name="risk-free-rate" inputmode="decimal" autocomplete="off" value="0%" />
+          </label>
+
+          <label class="field">
+            <span>行权价</span>
+            <input id="strikes" name="strikes" autocomplete="off" value="1288:1160:-8" />
+          </label>
+
+          <div class="field-note">行权价支持 1288,1280,1272 或 1288:1160:-8</div>
+
+          <div class="button-row">
+            <button class="primary-button" type="submit">计算</button>
+            <button id="reset-button" class="secondary-button" type="button">重置</button>
+          </div>
+          <button id="copy-button" class="secondary-button full-width" type="button">复制结果</button>
+
+          <output id="status-message" class="message" role="status">输入参数后点击计算。</output>
+        </form>
+
+        <section class="result-panel" aria-label="结果">
+          <div class="panel-title">结果</div>
+          <div class="table-frame">
+            <table>
+              <thead id="result-head"></thead>
+              <tbody id="result-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
