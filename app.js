@@ -1,8 +1,8 @@
 const DEFAULT_INPUTS = {
   "future-price": "1025",
   "days-1": "55",
-  "days-2": "65",
-  "days-3": "75",
+  "days-2": "113",
+  "days-3": "175",
   volatility: "40%",
   "risk-free-rate": "0%",
   "strike-max": "1288",
@@ -11,6 +11,10 @@ const DEFAULT_INPUTS = {
 };
 
 const DEFAULT_OPTION_TYPE = "call";
+const DEPENDENT_DAY_OFFSETS = {
+  "days-2": 58,
+  "days-3": 120,
+};
 const STORAGE_KEY = "call-premium-pwa-inputs-v1";
 const PRECISION = 1;
 const inputIds = Object.keys(DEFAULT_INPUTS);
@@ -27,6 +31,11 @@ const optionTypeInputs = Array.from(document.querySelectorAll('input[name="optio
 
 let lastResult = { columns: [], rows: [] };
 let deferredInstallPrompt = null;
+let manuallyEditedDays = {
+  "days-2": false,
+  "days-3": false,
+};
+let syncingDependentDays = false;
 
 function getInput(id) {
   return document.getElementById(id);
@@ -103,6 +112,37 @@ function collectDays() {
     throw new Error("请至少输入一个到期天数。");
   }
   return values;
+}
+
+function syncDependentDays(force = false) {
+  const baseText = getInput("days-1").value.trim();
+  const baseDays = Number(baseText);
+  if (!baseText || !Number.isFinite(baseDays)) {
+    return;
+  }
+
+  syncingDependentDays = true;
+  Object.entries(DEPENDENT_DAY_OFFSETS).forEach(([id, offset]) => {
+    if (force || !manuallyEditedDays[id]) {
+      getInput(id).value = String(displayNumber(baseDays + offset));
+    }
+  });
+  syncingDependentDays = false;
+}
+
+function trackDependentDayEdit(id) {
+  if (syncingDependentDays) {
+    return;
+  }
+
+  const baseDays = Number(getInput("days-1").value.trim());
+  if (!Number.isFinite(baseDays)) {
+    manuallyEditedDays[id] = Boolean(getInput(id).value.trim());
+    return;
+  }
+
+  const expectedValue = String(displayNumber(baseDays + DEPENDENT_DAY_OFFSETS[id]));
+  manuallyEditedDays[id] = getInput(id).value.trim() !== expectedValue;
 }
 
 function collectStrikes() {
@@ -296,15 +336,22 @@ function saveInputs() {
     data[id] = getInput(id).value;
   });
   data.optionType = getOptionType();
+  data.manuallyEditedDays = manuallyEditedDays;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
 function loadInputs() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  const values = saved ? { ...DEFAULT_INPUTS, ...JSON.parse(saved) } : DEFAULT_INPUTS;
+  const savedValues = saved ? JSON.parse(saved) : {};
+  const values = { ...DEFAULT_INPUTS, ...savedValues };
   inputIds.forEach((id) => {
     getInput(id).value = values[id] ?? DEFAULT_INPUTS[id];
   });
+  manuallyEditedDays = {
+    "days-2": Boolean(savedValues.manuallyEditedDays?.["days-2"]),
+    "days-3": Boolean(savedValues.manuallyEditedDays?.["days-3"]),
+  };
+  syncDependentDays();
   setOptionType(values.optionType ?? DEFAULT_OPTION_TYPE);
 }
 
@@ -312,6 +359,11 @@ function resetInputs() {
   inputIds.forEach((id) => {
     getInput(id).value = DEFAULT_INPUTS[id];
   });
+  manuallyEditedDays = {
+    "days-2": false,
+    "days-3": false,
+  };
+  syncDependentDays(true);
   setOptionType(DEFAULT_OPTION_TYPE);
   calculateAll();
 }
@@ -332,6 +384,9 @@ form.addEventListener("submit", (event) => {
 resetButton.addEventListener("click", resetInputs);
 copyButton.addEventListener("click", copyResults);
 optionTypeInputs.forEach((input) => input.addEventListener("change", calculateAll));
+getInput("days-1").addEventListener("input", () => syncDependentDays());
+getInput("days-2").addEventListener("input", () => trackDependentDayEdit("days-2"));
+getInput("days-3").addEventListener("input", () => trackDependentDayEdit("days-3"));
 
 window.addEventListener("online", updateOnlineStatus);
 window.addEventListener("offline", updateOnlineStatus);
