@@ -1,6 +1,6 @@
 ﻿# Black-76 Call Premium PWA
 
-A standalone Progressive Web App for calculating Black-76 call option premiums on futures.
+A standalone Progressive Web App for calculating Black-76 call and put option premiums on futures.
 
 ## Local Preview
 

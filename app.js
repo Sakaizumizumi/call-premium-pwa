@@ -8,6 +8,7 @@ const DEFAULT_INPUTS = {
   strikes: "1288:1160:-8",
 };
 
+const DEFAULT_OPTION_TYPE = "call";
 const STORAGE_KEY = "call-premium-pwa-inputs-v1";
 const PRECISION = 1;
 const inputIds = Object.keys(DEFAULT_INPUTS);
@@ -20,8 +21,9 @@ const resetButton = document.querySelector("#reset-button");
 const copyButton = document.querySelector("#copy-button");
 const installButton = document.querySelector("#install-button");
 const onlineStatus = document.querySelector("#online-status");
+const optionTypeInputs = Array.from(document.querySelectorAll('input[name="option-type"]'));
 
-let lastResult = { days: [], rows: [] };
+let lastResult = { columns: [], rows: [] };
 let deferredInstallPrompt = null;
 
 function getInput(id) {
@@ -228,9 +230,9 @@ function normalCdf(x) {
   return 0.5 * (1 + sign * erf);
 }
 
-function calculateCallPremium(futurePrice, daysToExpiry, volatility, strike, riskFreeRate) {
+function calculatePremium(futurePrice, daysToExpiry, volatility, strike, riskFreeRate, optionType) {
   const t = daysToExpiry / 365;
-  const intrinsic = Math.max(futurePrice - strike, 0);
+  const intrinsic = optionType === "call" ? Math.max(futurePrice - strike, 0) : Math.max(strike - futurePrice, 0);
 
   if (t <= 0) {
     return roundTo(intrinsic, PRECISION);
@@ -244,7 +246,10 @@ function calculateCallPremium(futurePrice, daysToExpiry, volatility, strike, ris
   const d1 = (Math.log(futurePrice / strike) + 0.5 * volatility ** 2 * t) / volSqrtT;
   const d2 = d1 - volSqrtT;
   const discount = Math.exp(-riskFreeRate * t);
-  const price = discount * (futurePrice * normalCdf(d1) - strike * normalCdf(d2));
+  const price =
+    optionType === "call"
+      ? discount * (futurePrice * normalCdf(d1) - strike * normalCdf(d2))
+      : discount * (strike * normalCdf(-d2) - futurePrice * normalCdf(-d1));
   return roundTo(price, PRECISION);
 }
 
@@ -265,22 +270,58 @@ function formatPremium(value) {
   return value.toFixed(PRECISION);
 }
 
+function getOptionType() {
+  return optionTypeInputs.find((input) => input.checked)?.value ?? DEFAULT_OPTION_TYPE;
+}
+
+function setOptionType(optionType) {
+  optionTypeInputs.forEach((candidate) => {
+    candidate.checked = candidate.value === optionType;
+  });
+}
+
+function describeOptionType(optionType) {
+  if (optionType === "call") {
+    return "看涨";
+  }
+  if (optionType === "put") {
+    return "看跌";
+  }
+  return "看涨/看跌";
+}
+
+function buildPremiumColumns(days, optionType) {
+  const selectedTypes = optionType === "both" ? ["call", "put"] : [optionType];
+  return days.flatMap((day) =>
+    selectedTypes.map((type) => ({
+      day,
+      type,
+      label: `${formatDay(day)} 天${describeOptionType(type)}`,
+      csvLabel: `${formatDay(day)} Days ${type === "call" ? "Call" : "Put"} Premium`,
+    })),
+  );
+}
+
 function calculateAll() {
   const futurePrice = positiveNumber("future-price", "期货价格");
   const days = collectDays();
+  const optionType = getOptionType();
+  const columns = buildPremiumColumns(days, optionType);
   const volatility = parsePercent("volatility", "隐含波动率");
   const riskFreeRate = parsePercent("risk-free-rate", "无风险利率");
   const strikes = parseStrikes(getInput("strikes").value);
 
   const rows = strikes.map((strike) => ({
     strike: displayNumber(strike),
-    premiums: days.map((day) => calculateCallPremium(futurePrice, day, volatility, strike, riskFreeRate)),
+    premiums: columns.map((column) =>
+      calculatePremium(futurePrice, column.day, volatility, strike, riskFreeRate, column.type),
+    ),
   }));
 
-  lastResult = { days, rows };
+  lastResult = { columns, rows };
   renderTable(lastResult);
   saveInputs();
-  setMessage(`已计算 ${rows.length} 个行权价，${days.length} 个到期天数。`);
+  setMessage(`已计算 ${rows.length} 个行权价，${days.length} 个到期天数，类型：${describeOptionType(optionType)}。`);
 }
 
 function renderTable(result) {
@@ -289,7 +330,7 @@ function renderTable(result) {
 
   const headerRow = document.createElement("tr");
   headerRow.append(createHeaderCell("行权价"));
-  result.days.forEach((day) => headerRow.append(createHeaderCell(`${formatDay(day)} 天权利金`)));
+  result.columns.forEach((column) => headerRow.append(createHeaderCell(column.label)));
   resultHead.append(headerRow);
 
   result.rows.forEach((row) => {
@@ -324,7 +365,7 @@ function copyResults() {
     return;
   }
 
-  const headers = ["Strike", ...lastResult.days.map((day) => `${formatDay(day)} Days Call Premium`)];
+  const headers = ["Strike", ...lastResult.columns.map((column) => column.csvLabel)];
   const lines = [headers.join(",")];
   lastResult.rows.forEach((row) => {
     lines.push([row.strike, ...row.premiums.map(formatPremium)].join(","));
@@ -341,6 +382,7 @@ function saveInputs() {
   inputIds.forEach((id) => {
     data[id] = getInput(id).value;
   });
+  data.optionType = getOptionType();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
@@ -350,12 +392,14 @@ function loadInputs() {
   inputIds.forEach((id) => {
     getInput(id).value = values[id] ?? DEFAULT_INPUTS[id];
   });
+  setOptionType(values.optionType ?? DEFAULT_OPTION_TYPE);
 }
 
 function resetInputs() {
   inputIds.forEach((id) => {
     getInput(id).value = DEFAULT_INPUTS[id];
   });
+  setOptionType(DEFAULT_OPTION_TYPE);
   calculateAll();
 }
 
@@ -374,6 +418,7 @@ form.addEventListener("submit", (event) => {
 
 resetButton.addEventListener("click", resetInputs);
 copyButton.addEventListener("click", copyResults);
+optionTypeInputs.forEach((input) => input.addEventListener("change", calculateAll));
 
 window.addEventListener("online", updateOnlineStatus);
 window.addEventListener("offline", updateOnlineStatus);

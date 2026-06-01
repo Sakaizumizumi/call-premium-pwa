@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#1f6f5b" />
-    <title>Black-76 看涨期权权利金计算器</title>
+    <title>Black-76 期权权利金计算器</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
@@ -17,7 +17,7 @@
         <div class="brand">
           <img class="brand-icon" src="icons/icon.svg" alt="" aria-hidden="true" />
           <div>
-            <h1>Black-76 看涨期权权利金计算器</h1>
+            <h1>Black-76 期权权利金计算器</h1>
             <p>期货期权多期限报价</p>
           </div>
         </div>
@@ -50,6 +50,24 @@
               <input id="days-3" name="days-3" inputmode="decimal" autocomplete="off" value="75" />
             </label>
           </div>
+
+          <fieldset class="option-field">
+            <legend>期权类型</legend>
+            <div class="segmented-control">
+              <label>
+                <input id="option-call" type="radio" name="option-type" value="call" checked />
+                <span>看涨</span>
+              </label>
+              <label>
+                <input id="option-put" type="radio" name="option-type" value="put" />
+                <span>看跌</span>
+              </label>
+              <label>
+                <input id="option-both" type="radio" name="option-type" value="both" />
+                <span>同时</span>
+              </label>
+            </div>
+          </fieldset>
 
           <label class="field">
             <span>隐含波动率</span>

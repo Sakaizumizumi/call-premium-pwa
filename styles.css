@@ -133,6 +133,20 @@ p {
   font-weight: 700;
 }
 
+.option-field {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.option-field legend {
+  padding: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 input {
   width: 100%;
   min-height: 42px;
@@ -147,6 +161,55 @@ input {
 input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(31, 111, 91, 0.14);
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.segmented-control label {
+  position: relative;
+  min-width: 0;
+}
+
+.segmented-control input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-control span {
+  display: block;
+  min-height: 42px;
+  padding: 10px 8px;
+  color: var(--text);
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.segmented-control label + label span {
+  border-left: 1px solid var(--line);
+}
+
+.segmented-control input:checked + span {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.segmented-control input:focus-visible + span {
+  outline: 3px solid rgba(34, 87, 122, 0.28);
+  outline-offset: -3px;
 }
 
 .days-grid {

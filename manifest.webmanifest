@@ -1,7 +1,7 @@
 {
-  "name": "Black-76 看涨期权权利金计算器",
+  "name": "Black-76 期权权利金计算器",
   "short_name": "权利金计算器",
-  "description": "用于期货看涨期权的 Black-76 权利金计算。",
+  "description": "用于期货看涨和看跌期权的 Black-76 权利金计算。",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
