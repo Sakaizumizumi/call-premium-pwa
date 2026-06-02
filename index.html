@@ -36,21 +36,31 @@
             <input id="future-price" name="future-price" inputmode="decimal" autocomplete="off" value="1025" />
           </label>
 
-          <div class="days-grid" aria-label="到期天数">
+          <div class="contract-select-grid" aria-label="合约选择">
             <label class="field">
-              <span>到期天数 1</span>
-              <input id="days-1" name="days-1" inputmode="decimal" autocomplete="off" value="55" />
+              <span>合约 1</span>
+              <select id="contract-1" name="contract-1"></select>
             </label>
             <label class="field">
-              <span>到期天数 2</span>
-              <input id="days-2" name="days-2" inputmode="decimal" autocomplete="off" value="113" />
+              <span>合约 2</span>
+              <select id="contract-2" name="contract-2"></select>
             </label>
             <label class="field">
-              <span>到期天数 3</span>
-              <input id="days-3" name="days-3" inputmode="decimal" autocomplete="off" value="175" />
+              <span>合约 3</span>
+              <select id="contract-3" name="contract-3"></select>
             </label>
           </div>
-          <div class="field-note">默认: 到期天数 2 = 到期天数 1 + 58，到期天数 3 = 到期天数 1 + 120；手动修改后保留手动值。</div>
+          <div id="today-label" class="field-note">今天:</div>
+
+          <details class="contract-manager" open>
+            <summary>合约预设</summary>
+            <div id="contract-list" class="contract-list"></div>
+            <div class="contract-actions">
+              <button id="add-contract-button" class="secondary-button" type="button">新增合约</button>
+              <button id="reset-contracts-button" class="secondary-button" type="button">恢复默认合约</button>
+            </div>
+            <div class="field-note">到期日格式为 8 位数字，例如 20261124。过期合约不会出现在上方选择框里。</div>
+          </details>
 
           <fieldset class="option-field">
             <legend>期权类型</legend>

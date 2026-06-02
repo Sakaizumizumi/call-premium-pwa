@@ -32,7 +32,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
   letter-spacing: 0;
 }
@@ -147,7 +148,8 @@ p {
   font-weight: 700;
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
@@ -159,6 +161,11 @@ input {
 }
 
 input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(31, 111, 91, 0.14);
+}
+
+select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(31, 111, 91, 0.14);
 }
@@ -212,10 +219,54 @@ input:focus {
   outline-offset: -3px;
 }
 
-.days-grid {
+.days-grid,
+.contract-select-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.contract-manager {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfb;
+}
+
+.contract-manager summary {
+  color: var(--text);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.contract-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.contract-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.contract-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.icon-button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 700;
 }
 
 .field-note {
@@ -361,7 +412,10 @@ tbody tr:hover {
     display: grid;
   }
 
-  .days-grid {
+  .days-grid,
+  .contract-select-grid,
+  .contract-row,
+  .contract-actions {
     grid-template-columns: 1fr;
   }
 

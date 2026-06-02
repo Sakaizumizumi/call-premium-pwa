@@ -1,8 +1,5 @@
 const DEFAULT_INPUTS = {
   "future-price": "1025",
-  "days-1": "55",
-  "days-2": "113",
-  "days-3": "175",
   volatility: "40%",
   "risk-free-rate": "0%",
   "strike-max": "1288",
@@ -10,14 +7,19 @@ const DEFAULT_INPUTS = {
   "strike-step": "8",
 };
 
+const DEFAULT_CONTRACTS = [
+  { code: "2608", expiry: "20260727" },
+  { code: "2610", expiry: "20260923" },
+  { code: "2612", expiry: "20261124" },
+];
+
 const DEFAULT_OPTION_TYPE = "call";
-const DEPENDENT_DAY_OFFSETS = {
-  "days-2": 58,
-  "days-3": 120,
-};
-const STORAGE_KEY = "call-premium-pwa-inputs-v1";
+const SETTINGS_STORAGE_KEY = "call-premium-pwa-settings-v2";
+const CONTRACTS_STORAGE_KEY = "call-premium-pwa-contracts-v1";
 const PRECISION = 1;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const inputIds = Object.keys(DEFAULT_INPUTS);
+const contractSelectIds = ["contract-1", "contract-2", "contract-3"];
 
 const form = document.querySelector("#calculator-form");
 const resultHead = document.querySelector("#result-head");
@@ -27,15 +29,16 @@ const resetButton = document.querySelector("#reset-button");
 const copyButton = document.querySelector("#copy-button");
 const installButton = document.querySelector("#install-button");
 const onlineStatus = document.querySelector("#online-status");
+const contractList = document.querySelector("#contract-list");
+const addContractButton = document.querySelector("#add-contract-button");
+const resetContractsButton = document.querySelector("#reset-contracts-button");
+const todayLabel = document.querySelector("#today-label");
 const optionTypeInputs = Array.from(document.querySelectorAll('input[name="option-type"]'));
+const contractSelects = contractSelectIds.map((id) => document.getElementById(id));
 
+let contracts = DEFAULT_CONTRACTS.map((contract) => ({ ...contract }));
 let lastResult = { columns: [], rows: [] };
 let deferredInstallPrompt = null;
-let manuallyEditedDays = {
-  "days-2": false,
-  "days-3": false,
-};
-let syncingDependentDays = false;
 
 function getInput(id) {
   return document.getElementById(id);
@@ -91,58 +94,120 @@ function parsePercent(id, fieldName) {
   return nonNegativeNumber(value, fieldName);
 }
 
-function collectDays() {
-  const fields = ["days-1", "days-2", "days-3"];
-  const values = [];
-
-  fields.forEach((id, index) => {
-    const text = getInput(id).value.trim();
-    if (!text) {
-      return;
-    }
-
-    const value = Number(text);
-    if (!Number.isFinite(value)) {
-      throw new Error(`到期天数 ${index + 1} 需要是数字。`);
-    }
-    values.push(nonNegativeNumber(value, `到期天数 ${index + 1}`));
-  });
-
-  if (values.length === 0) {
-    throw new Error("请至少输入一个到期天数。");
-  }
-  return values;
+function getTodayDate() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-function syncDependentDays(force = false) {
-  const baseText = getInput("days-1").value.trim();
-  const baseDays = Number(baseText);
-  if (!baseText || !Number.isFinite(baseDays)) {
-    return;
-  }
-
-  syncingDependentDays = true;
-  Object.entries(DEPENDENT_DAY_OFFSETS).forEach(([id, offset]) => {
-    if (force || !manuallyEditedDays[id]) {
-      getInput(id).value = String(displayNumber(baseDays + offset));
-    }
-  });
-  syncingDependentDays = false;
+function formatDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
 }
 
-function trackDependentDayEdit(id) {
-  if (syncingDependentDays) {
-    return;
+function parseExpiryDate(expiry, fieldName = "到期日") {
+  const text = String(expiry ?? "").trim();
+  if (!/^\d{8}$/.test(text)) {
+    throw new Error(`${fieldName}必须是 8 位数字，例如 20261124。`);
   }
 
-  const baseDays = Number(getInput("days-1").value.trim());
-  if (!Number.isFinite(baseDays)) {
-    manuallyEditedDays[id] = Boolean(getInput(id).value.trim());
-    return;
-  }
+  const year = Number(text.slice(0, 4));
+  const month = Number(text.slice(4, 6));
+  const day = Number(text.slice(6, 8));
+  const date = new Date(year, month - 1, day);
 
-  const expectedValue = String(displayNumber(baseDays + DEPENDENT_DAY_OFFSETS[id]));
-  manuallyEditedDays[id] = getInput(id).value.trim() !== expectedValue;
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    throw new Error(`${fieldName}不是有效日期。`);
+  }
+  return date;
+}
+
+function daysUntilExpiry(expiry, today = getTodayDate()) {
+  const expiryDate = parseExpiryDate(expiry);
+  return Math.round((expiryDate.getTime() - today.getTime()) / MS_PER_DAY);
+}
+
+function normalizeContract(contract, index) {
+  const code = String(contract?.code ?? "").trim();
+  const expiry = String(contract?.expiry ?? "").trim();
+  if (!code) {
+    throw new Error(`第 ${index + 1} 个合约代码不能为空。`);
+  }
+  parseExpiryDate(expiry, `合约 ${code} 的到期日`);
+  return { code, expiry };
+}
+
+function getValidatedContracts() {
+  return contracts.map((contract, index) => normalizeContract(contract, index));
+}
+
+function getSelectableContracts() {
+  const today = getTodayDate();
+  return contracts
+    .map((contract, index) => {
+      try {
+        const normalizedContract = normalizeContract(contract, index);
+        return {
+          ...normalizedContract,
+          index,
+          key: buildContractKey(normalizedContract, index),
+          days: daysUntilExpiry(normalizedContract.expiry, today),
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((contract) => contract !== null)
+    .filter((contract) => contract.days >= 0)
+    .sort((a, b) => a.expiry.localeCompare(b.expiry) || a.code.localeCompare(b.code));
+}
+
+function buildContractKey(contract, index) {
+  return `${index}::${contract.code}::${contract.expiry}`;
+}
+
+function collectContractColumns() {
+  const selectableContracts = getSelectableContracts();
+  const byKey = new Map(selectableContracts.map((contract) => [contract.key, contract]));
+  const columns = contractSelects
+    .map((select) => byKey.get(select.value))
+    .filter((contract) => contract !== undefined);
+
+  if (columns.length === 0) {
+    throw new Error("请至少选择一个未过期合约。");
+  }
+  return columns;
+}
+
+function renderContractSelects(preserveSelection = false) {
+  const selectableContracts = getSelectableContracts();
+
+  contractSelects.forEach((select, selectIndex) => {
+    const previousValue = preserveSelection ? select.value : "";
+    select.replaceChildren();
+
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = selectableContracts.length ? "不使用" : "无未过期合约";
+    select.append(emptyOption);
+
+    selectableContracts.forEach((contract) => {
+      const option = document.createElement("option");
+      option.value = contract.key;
+      option.textContent = `${contract.code} (${contract.expiry}, ${contract.days} 天)`;
+      select.append(option);
+    });
+
+    const defaultContract = selectableContracts[selectIndex];
+    if (previousValue && selectableContracts.some((contract) => contract.key === previousValue)) {
+      select.value = previousValue;
+    } else {
+      select.value = defaultContract?.key ?? "";
+    }
+    select.disabled = selectableContracts.length === 0;
+  });
+
 }
 
 function collectStrikes() {
@@ -215,10 +280,6 @@ function displayNumber(value) {
   return Number.isInteger(value) ? value : Number(value.toFixed(10));
 }
 
-function formatDay(value) {
-  return String(displayNumber(value));
-}
-
 function formatPremium(value) {
   return value.toFixed(PRECISION);
 }
@@ -243,23 +304,24 @@ function describeOptionType(optionType) {
   return "看涨/看跌";
 }
 
-function buildPremiumColumns(days, optionType) {
+function buildPremiumColumns(contractColumns, optionType) {
   const selectedTypes = optionType === "both" ? ["call", "put"] : [optionType];
-  return days.flatMap((day) =>
+  return contractColumns.flatMap((contract) =>
     selectedTypes.map((type) => ({
-      day,
+      ...contract,
       type,
-      label: `${formatDay(day)} 天${describeOptionType(type)}`,
-      csvLabel: `${formatDay(day)} Days ${type === "call" ? "Call" : "Put"} Premium`,
+      label: `${contract.code} ${contract.days} 天${describeOptionType(type)}`,
+      csvLabel: `${contract.code} ${contract.days} Days ${type === "call" ? "Call" : "Put"} Premium`,
     })),
   );
 }
 
 function calculateAll() {
   const futurePrice = positiveNumber("future-price", "期货价格");
-  const days = collectDays();
+  getValidatedContracts();
+  const contractColumns = collectContractColumns();
   const optionType = getOptionType();
-  const columns = buildPremiumColumns(days, optionType);
+  const columns = buildPremiumColumns(contractColumns, optionType);
   const volatility = parsePercent("volatility", "隐含波动率");
   const riskFreeRate = parsePercent("risk-free-rate", "无风险利率");
   const strikes = collectStrikes();
@@ -267,14 +329,23 @@ function calculateAll() {
   const rows = strikes.map((strike) => ({
     strike: displayNumber(strike),
     premiums: columns.map((column) =>
-      calculatePremium(futurePrice, column.day, volatility, strike, riskFreeRate, column.type),
+      calculatePremium(futurePrice, column.days, volatility, strike, riskFreeRate, column.type),
     ),
   }));
 
   lastResult = { columns, rows };
   renderTable(lastResult);
-  saveInputs();
-  setMessage(`已计算 ${rows.length} 个行权价，${days.length} 个到期天数，类型：${describeOptionType(optionType)}。`);
+  saveSettings();
+  saveContracts();
+  setMessage(`已计算 ${rows.length} 个行权价，${contractColumns.length} 个合约，类型：${describeOptionType(optionType)}。`);
+}
+
+function runCalculation() {
+  try {
+    calculateAll();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
 }
 
 function renderTable(result) {
@@ -330,42 +401,112 @@ function copyResults() {
     .catch(() => setMessage("复制失败，请检查浏览器剪贴板权限。", true));
 }
 
-function saveInputs() {
+function renderContractManager() {
+  contractList.replaceChildren();
+  contracts.forEach((contract, index) => {
+    const row = document.createElement("div");
+    row.className = "contract-row";
+
+    const codeInput = document.createElement("input");
+    codeInput.value = contract.code;
+    codeInput.autocomplete = "off";
+    codeInput.placeholder = "合约";
+    codeInput.setAttribute("aria-label", `合约 ${index + 1} 代码`);
+    codeInput.addEventListener("input", () => {
+      contracts[index].code = codeInput.value.trim();
+      persistContractEditorChange();
+    });
+
+    const expiryInput = document.createElement("input");
+    expiryInput.value = contract.expiry;
+    expiryInput.autocomplete = "off";
+    expiryInput.inputMode = "numeric";
+    expiryInput.placeholder = "YYYYMMDD";
+    expiryInput.setAttribute("aria-label", `合约 ${index + 1} 到期日`);
+    expiryInput.addEventListener("input", () => {
+      contracts[index].expiry = expiryInput.value.trim();
+      persistContractEditorChange();
+    });
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "icon-button";
+    deleteButton.type = "button";
+    deleteButton.textContent = "删除";
+    deleteButton.addEventListener("click", () => {
+      contracts.splice(index, 1);
+      persistContractEditorChange();
+      renderContractManager();
+    });
+
+    row.append(codeInput, expiryInput, deleteButton);
+    contractList.append(row);
+  });
+}
+
+function persistContractEditorChange() {
+  saveContracts();
+  renderContractSelects(true);
+}
+
+function saveSettings() {
   const data = {};
   inputIds.forEach((id) => {
     data[id] = getInput(id).value;
   });
   data.optionType = getOptionType();
-  data.manuallyEditedDays = manuallyEditedDays;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(data));
 }
 
-function loadInputs() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  const savedValues = saved ? JSON.parse(saved) : {};
-  const values = { ...DEFAULT_INPUTS, ...savedValues };
+function saveContracts() {
+  localStorage.setItem(CONTRACTS_STORAGE_KEY, JSON.stringify(contracts));
+}
+
+function loadSettings() {
+  const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
+  const values = saved ? { ...DEFAULT_INPUTS, ...JSON.parse(saved) } : DEFAULT_INPUTS;
   inputIds.forEach((id) => {
     getInput(id).value = values[id] ?? DEFAULT_INPUTS[id];
   });
-  manuallyEditedDays = {
-    "days-2": Boolean(savedValues.manuallyEditedDays?.["days-2"]),
-    "days-3": Boolean(savedValues.manuallyEditedDays?.["days-3"]),
-  };
-  syncDependentDays();
   setOptionType(values.optionType ?? DEFAULT_OPTION_TYPE);
+}
+
+function loadContracts() {
+  const saved = localStorage.getItem(CONTRACTS_STORAGE_KEY);
+  if (!saved) {
+    contracts = DEFAULT_CONTRACTS.map((contract) => ({ ...contract }));
+    return;
+  }
+
+  const parsed = JSON.parse(saved);
+  contracts = Array.isArray(parsed) ? parsed.map((contract) => ({ ...contract })) : DEFAULT_CONTRACTS.map((contract) => ({ ...contract }));
 }
 
 function resetInputs() {
   inputIds.forEach((id) => {
     getInput(id).value = DEFAULT_INPUTS[id];
   });
-  manuallyEditedDays = {
-    "days-2": false,
-    "days-3": false,
-  };
-  syncDependentDays(true);
   setOptionType(DEFAULT_OPTION_TYPE);
-  calculateAll();
+  renderContractSelects(false);
+  runCalculation();
+}
+
+function resetContracts() {
+  contracts = DEFAULT_CONTRACTS.map((contract) => ({ ...contract }));
+  saveContracts();
+  renderContractManager();
+  renderContractSelects(false);
+  runCalculation();
+}
+
+function addContract() {
+  contracts.push({ code: "", expiry: "" });
+  saveContracts();
+  renderContractManager();
+  renderContractSelects(true);
+}
+
+function updateTodayLabel() {
+  todayLabel.textContent = `今天: ${formatDateKey(getTodayDate())}`;
 }
 
 function updateOnlineStatus() {
@@ -374,19 +515,15 @@ function updateOnlineStatus() {
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  try {
-    calculateAll();
-  } catch (error) {
-    setMessage(error.message, true);
-  }
+  runCalculation();
 });
 
 resetButton.addEventListener("click", resetInputs);
 copyButton.addEventListener("click", copyResults);
-optionTypeInputs.forEach((input) => input.addEventListener("change", calculateAll));
-getInput("days-1").addEventListener("input", () => syncDependentDays());
-getInput("days-2").addEventListener("input", () => trackDependentDayEdit("days-2"));
-getInput("days-3").addEventListener("input", () => trackDependentDayEdit("days-3"));
+addContractButton.addEventListener("click", addContract);
+resetContractsButton.addEventListener("click", resetContracts);
+optionTypeInputs.forEach((input) => input.addEventListener("change", runCalculation));
+contractSelects.forEach((select) => select.addEventListener("change", runCalculation));
 
 window.addEventListener("online", updateOnlineStatus);
 window.addEventListener("offline", updateOnlineStatus);
@@ -415,6 +552,10 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-loadInputs();
+loadSettings();
+loadContracts();
+updateTodayLabel();
+renderContractManager();
+renderContractSelects();
 updateOnlineStatus();
-calculateAll();
+runCalculation();
