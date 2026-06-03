@@ -36,6 +36,38 @@
             <input id="future-price" name="future-price" inputmode="decimal" autocomplete="off" value="1025" />
           </label>
 
+          <section class="quote-panel" aria-label="实时行情">
+            <div class="quote-heading">
+              <label class="switch-field">
+                <input id="quote-enabled" type="checkbox" />
+                <span>实时价</span>
+              </label>
+              <span id="quote-summary" class="quote-summary">已暂停</span>
+            </div>
+
+            <label class="field">
+              <span>刷新频率</span>
+              <select id="quote-interval" name="quote-interval">
+                <option value="1000">1 秒</option>
+                <option value="15000">15 秒</option>
+                <option value="60000" selected>1 分钟</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>行情代理</span>
+              <input
+                id="quote-endpoint"
+                name="quote-endpoint"
+                inputmode="url"
+                autocomplete="off"
+                placeholder="https://your-worker.workers.dev/quote/gold-main"
+              />
+            </label>
+
+            <output id="quote-status" class="field-note" role="status">启用后刷新黄金主连价格。</output>
+          </section>
+
           <div class="contract-select-grid" aria-label="合约选择">
             <label class="field">
               <span>合约 1</span>

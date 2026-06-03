@@ -1,4 +1,4 @@
-const CACHE_NAME = "call-premium-pwa-v5";
+const CACHE_NAME = "call-premium-pwa-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -28,6 +28,12 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") {
+    return;
+  }
+
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.pathname.includes("/quote/") || requestUrl.origin !== self.location.origin) {
+    event.respondWith(fetch(event.request));
     return;
   }
 

@@ -170,6 +170,48 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(31, 111, 91, 0.14);
 }
 
+.quote-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfb;
+}
+
+.quote-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.switch-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.switch-field input {
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.quote-summary {
+  min-width: 76px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 9px;
+  background: var(--surface-2);
+  color: var(--accent-strong);
+  font-weight: 800;
+  text-align: center;
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -275,6 +317,11 @@ select:focus {
   line-height: 1.45;
 }
 
+.field-note.error {
+  color: var(--warning);
+  font-weight: 700;
+}
+
 .button-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -377,6 +424,15 @@ thead th {
 
 tbody tr:nth-child(even) {
   background: #fafbf9;
+}
+
+tbody tr.live-row {
+  background: #e9f4ef;
+  font-weight: 800;
+}
+
+tbody tr.live-row td:first-child {
+  color: var(--accent-strong);
 }
 
 tbody tr:hover {

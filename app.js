@@ -14,8 +14,15 @@ const DEFAULT_CONTRACTS = [
 ];
 
 const DEFAULT_OPTION_TYPE = "call";
+const DEFAULT_QUOTE_SETTINGS = {
+  enabled: false,
+  intervalMs: 60000,
+  endpoint: "",
+};
+const QUOTE_INTERVALS = new Set([1000, 15000, 60000]);
 const SETTINGS_STORAGE_KEY = "call-premium-pwa-settings-v2";
 const CONTRACTS_STORAGE_KEY = "call-premium-pwa-contracts-v1";
+const QUOTE_SETTINGS_STORAGE_KEY = "call-premium-pwa-quote-settings-v1";
 const PRECISION = 1;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const inputIds = Object.keys(DEFAULT_INPUTS);
@@ -33,11 +40,20 @@ const contractList = document.querySelector("#contract-list");
 const addContractButton = document.querySelector("#add-contract-button");
 const resetContractsButton = document.querySelector("#reset-contracts-button");
 const todayLabel = document.querySelector("#today-label");
+const quoteEnabledInput = document.querySelector("#quote-enabled");
+const quoteIntervalInput = document.querySelector("#quote-interval");
+const quoteEndpointInput = document.querySelector("#quote-endpoint");
+const quoteSummary = document.querySelector("#quote-summary");
+const quoteStatus = document.querySelector("#quote-status");
 const optionTypeInputs = Array.from(document.querySelectorAll('input[name="option-type"]'));
 const contractSelects = contractSelectIds.map((id) => document.getElementById(id));
 
 let contracts = DEFAULT_CONTRACTS.map((contract) => ({ ...contract }));
-let lastResult = { columns: [], rows: [] };
+let quoteSettings = { ...DEFAULT_QUOTE_SETTINGS };
+let latestQuote = null;
+let quoteTimerId = null;
+let quoteFetchInFlight = false;
+let lastResult = { columns: [], liveRow: null, rows: [] };
 let deferredInstallPrompt = null;
 
 function getInput(id) {
@@ -284,6 +300,31 @@ function formatPremium(value) {
   return value.toFixed(PRECISION);
 }
 
+function formatQuotePrice(value) {
+  return Number(value).toFixed(PRECISION);
+}
+
+function formatQuoteTime(value) {
+  if (!value) {
+    return "时间未知";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "时间未知";
+  }
+
+  return date.toLocaleString("zh-CN", {
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 function getOptionType() {
   return optionTypeInputs.find((input) => input.checked)?.value ?? DEFAULT_OPTION_TYPE;
 }
@@ -316,6 +357,22 @@ function buildPremiumColumns(contractColumns, optionType) {
   );
 }
 
+function buildLiveRow(columns, volatility, riskFreeRate) {
+  if (!latestQuote?.price || latestQuote.price <= 0) {
+    return null;
+  }
+
+  const quotePrice = latestQuote.price;
+  return {
+    strike: `实时价 ${formatQuotePrice(quotePrice)}`,
+    csvStrike: `Live Price ${formatQuotePrice(quotePrice)}`,
+    premiums: columns.map((column) =>
+      calculatePremium(quotePrice, column.days, volatility, quotePrice, riskFreeRate, column.type),
+    ),
+    isLive: true,
+  };
+}
+
 function calculateAll() {
   const futurePrice = positiveNumber("future-price", "期货价格");
   getValidatedContracts();
@@ -325,6 +382,7 @@ function calculateAll() {
   const volatility = parsePercent("volatility", "隐含波动率");
   const riskFreeRate = parsePercent("risk-free-rate", "无风险利率");
   const strikes = collectStrikes();
+  const liveRow = buildLiveRow(columns, volatility, riskFreeRate);
 
   const rows = strikes.map((strike) => ({
     strike: displayNumber(strike),
@@ -333,7 +391,7 @@ function calculateAll() {
     ),
   }));
 
-  lastResult = { columns, rows };
+  lastResult = { columns, liveRow, rows };
   renderTable(lastResult);
   saveSettings();
   saveContracts();
@@ -357,12 +415,23 @@ function renderTable(result) {
   result.columns.forEach((column) => headerRow.append(createHeaderCell(column.label)));
   resultHead.append(headerRow);
 
+  if (result.liveRow) {
+    resultBody.append(createResultRow(result.liveRow));
+  }
+
   result.rows.forEach((row) => {
-    const tableRow = document.createElement("tr");
-    tableRow.append(createCell(row.strike));
-    row.premiums.forEach((premium) => tableRow.append(createCell(formatPremium(premium))));
-    resultBody.append(tableRow);
+    resultBody.append(createResultRow(row));
   });
+}
+
+function createResultRow(row) {
+  const tableRow = document.createElement("tr");
+  if (row.isLive) {
+    tableRow.className = "live-row";
+  }
+  tableRow.append(createCell(row.strike));
+  row.premiums.forEach((premium) => tableRow.append(createCell(formatPremium(premium))));
+  return tableRow;
 }
 
 function createHeaderCell(text) {
@@ -391,8 +460,9 @@ function copyResults() {
 
   const headers = ["Strike", ...lastResult.columns.map((column) => column.csvLabel)];
   const lines = [headers.join(",")];
-  lastResult.rows.forEach((row) => {
-    lines.push([row.strike, ...row.premiums.map(formatPremium)].join(","));
+  const rows = lastResult.liveRow ? [lastResult.liveRow, ...lastResult.rows] : lastResult.rows;
+  rows.forEach((row) => {
+    lines.push([row.csvStrike ?? row.strike, ...row.premiums.map(formatPremium)].join(","));
   });
 
   navigator.clipboard
@@ -505,12 +575,187 @@ function addContract() {
   renderContractSelects(true);
 }
 
+function normalizeQuoteSettings(settings) {
+  const intervalMs = Number(settings?.intervalMs);
+  return {
+    enabled: Boolean(settings?.enabled),
+    intervalMs: QUOTE_INTERVALS.has(intervalMs) ? intervalMs : DEFAULT_QUOTE_SETTINGS.intervalMs,
+    endpoint: String(settings?.endpoint ?? "").trim(),
+  };
+}
+
+function loadQuoteSettings() {
+  const saved = localStorage.getItem(QUOTE_SETTINGS_STORAGE_KEY);
+  if (!saved) {
+    quoteSettings = { ...DEFAULT_QUOTE_SETTINGS };
+    return;
+  }
+
+  try {
+    quoteSettings = normalizeQuoteSettings(JSON.parse(saved));
+  } catch {
+    quoteSettings = { ...DEFAULT_QUOTE_SETTINGS };
+  }
+}
+
+function saveQuoteSettings() {
+  localStorage.setItem(QUOTE_SETTINGS_STORAGE_KEY, JSON.stringify(quoteSettings));
+}
+
+function renderQuoteSettings() {
+  quoteEnabledInput.checked = quoteSettings.enabled;
+  quoteIntervalInput.value = String(quoteSettings.intervalMs);
+  quoteEndpointInput.value = quoteSettings.endpoint;
+  updateQuoteStatus();
+}
+
+function readQuoteSettingsFromForm() {
+  quoteSettings = normalizeQuoteSettings({
+    enabled: quoteEnabledInput.checked,
+    intervalMs: quoteIntervalInput.value,
+    endpoint: quoteEndpointInput.value,
+  });
+  saveQuoteSettings();
+}
+
+function resolveQuoteEndpoint() {
+  const endpoint = quoteSettings.endpoint.trim();
+  if (!endpoint) {
+    return "";
+  }
+  return new URL(endpoint, window.location.href).toString();
+}
+
+function updateQuoteStatus(message = "", isError = false) {
+  quoteStatus.classList.toggle("error", isError);
+
+  if (message) {
+    quoteStatus.textContent = message;
+    quoteSummary.textContent = latestQuote ? `最新 ${formatQuotePrice(latestQuote.price)}` : "等待行情";
+    return;
+  }
+
+  if (!quoteSettings.enabled) {
+    quoteSummary.textContent = "已暂停";
+    quoteStatus.textContent = "启用后会按所选频率刷新黄金主连价格。";
+    return;
+  }
+
+  if (!quoteSettings.endpoint) {
+    quoteSummary.textContent = "未配置";
+    quoteStatus.textContent = "请先填写 Cloudflare Worker 代理地址。";
+    quoteStatus.classList.add("error");
+    return;
+  }
+
+  if (!navigator.onLine) {
+    quoteSummary.textContent = "离线";
+    quoteStatus.textContent = latestQuote
+      ? `离线中，保留上次价格 ${formatQuotePrice(latestQuote.price)}。`
+      : "离线中，暂停行情刷新。";
+    return;
+  }
+
+  if (latestQuote) {
+    quoteSummary.textContent = `${formatQuotePrice(latestQuote.price)}`;
+    quoteStatus.textContent = `${latestQuote.name || latestQuote.symbol || "黄金主连"} · ${formatQuoteTime(latestQuote.quoteTime)} · ${latestQuote.source || "行情源"}`;
+    return;
+  }
+
+  quoteSummary.textContent = "等待行情";
+  quoteStatus.textContent = "正在等待第一次行情刷新。";
+}
+
+function restartQuotePolling(fetchImmediately = true) {
+  stopQuotePolling();
+  updateQuoteStatus();
+
+  if (!quoteSettings.enabled || !quoteSettings.endpoint || !navigator.onLine) {
+    return;
+  }
+
+  if (fetchImmediately) {
+    fetchLatestQuote();
+  }
+  quoteTimerId = window.setInterval(fetchLatestQuote, quoteSettings.intervalMs);
+}
+
+function stopQuotePolling() {
+  if (quoteTimerId !== null) {
+    window.clearInterval(quoteTimerId);
+    quoteTimerId = null;
+  }
+}
+
+async function fetchLatestQuote() {
+  if (quoteFetchInFlight || !quoteSettings.enabled || !navigator.onLine) {
+    return;
+  }
+
+  const endpoint = resolveQuoteEndpoint();
+  if (!endpoint) {
+    updateQuoteStatus("请先填写 Cloudflare Worker 代理地址。", true);
+    return;
+  }
+
+  quoteFetchInFlight = true;
+  updateQuoteStatus("正在刷新黄金主连价格...");
+
+  try {
+    const response = await fetch(endpoint, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`行情代理返回 ${response.status}`);
+    }
+
+    const data = await response.json();
+    const price = Number(data.price);
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error("行情价格无效");
+    }
+
+    latestQuote = {
+      symbol: String(data.symbol ?? "au0"),
+      name: String(data.name ?? "上期所黄金主连"),
+      price,
+      quoteTime: data.quoteTime ?? data.time ?? null,
+      source: String(data.source ?? "iTick"),
+      stale: Boolean(data.stale),
+      fetchedAt: new Date().toISOString(),
+    };
+    updateQuoteStatus();
+    runCalculation();
+  } catch (error) {
+    const fallback = latestQuote
+      ? `行情暂不可用，保留上次价格 ${formatQuotePrice(latestQuote.price)}。`
+      : `行情暂不可用：${error.message}`;
+    updateQuoteStatus(fallback, true);
+  } finally {
+    quoteFetchInFlight = false;
+  }
+}
+
+function handleQuoteSettingsChange() {
+  readQuoteSettingsFromForm();
+  restartQuotePolling(true);
+  runCalculation();
+}
+
 function updateTodayLabel() {
   todayLabel.textContent = `今天: ${formatDateKey(getTodayDate())}`;
 }
 
 function updateOnlineStatus() {
   onlineStatus.textContent = navigator.onLine ? "在线" : "离线";
+}
+
+function handleOnlineStatusChange() {
+  updateOnlineStatus();
+  if (navigator.onLine) {
+    restartQuotePolling(true);
+  } else {
+    stopQuotePolling();
+    updateQuoteStatus();
+  }
 }
 
 form.addEventListener("submit", (event) => {
@@ -524,9 +769,18 @@ addContractButton.addEventListener("click", addContract);
 resetContractsButton.addEventListener("click", resetContracts);
 optionTypeInputs.forEach((input) => input.addEventListener("change", runCalculation));
 contractSelects.forEach((select) => select.addEventListener("change", runCalculation));
+quoteEnabledInput.addEventListener("change", handleQuoteSettingsChange);
+quoteIntervalInput.addEventListener("change", handleQuoteSettingsChange);
+quoteEndpointInput.addEventListener("change", handleQuoteSettingsChange);
 
-window.addEventListener("online", updateOnlineStatus);
-window.addEventListener("offline", updateOnlineStatus);
+window.addEventListener("online", handleOnlineStatusChange);
+window.addEventListener("offline", handleOnlineStatusChange);
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && quoteSettings.enabled) {
+    restartQuotePolling(true);
+  }
+});
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
@@ -554,8 +808,11 @@ if ("serviceWorker" in navigator) {
 
 loadSettings();
 loadContracts();
+loadQuoteSettings();
 updateTodayLabel();
 renderContractManager();
 renderContractSelects();
+renderQuoteSettings();
 updateOnlineStatus();
 runCalculation();
+restartQuotePolling(true);
