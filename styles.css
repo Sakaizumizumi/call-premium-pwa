@@ -426,15 +426,6 @@ tbody tr:nth-child(even) {
   background: #fafbf9;
 }
 
-tbody tr.live-row {
-  background: #e9f4ef;
-  font-weight: 800;
-}
-
-tbody tr.live-row td:first-child {
-  color: var(--accent-strong);
-}
-
 tbody tr:hover {
   background: #edf5f1;
 }

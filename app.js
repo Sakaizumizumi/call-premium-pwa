@@ -54,7 +54,7 @@ let quoteSettings = { ...DEFAULT_QUOTE_SETTINGS };
 let latestQuote = null;
 let quoteTimerId = null;
 let quoteFetchInFlight = false;
-let lastResult = { columns: [], liveRow: null, rows: [] };
+let lastResult = { columns: [], rows: [] };
 let deferredInstallPrompt = null;
 
 function getInput(id) {
@@ -352,30 +352,41 @@ function describeOptionType(optionType) {
 
 function buildPremiumColumns(contractColumns, optionType) {
   const selectedTypes = optionType === "both" ? ["call", "put"] : [optionType];
+  const hasLivePrice = hasUsableLivePrice();
   return contractColumns.flatMap((contract) =>
-    selectedTypes.map((type) => ({
-      ...contract,
-      type,
-      label: `${contract.code} ${contract.days} 天${describeOptionType(type)}`,
-      csvLabel: `${contract.code} ${contract.days} Days ${type === "call" ? "Call" : "Put"} Premium`,
-    })),
+    selectedTypes.flatMap((type) => {
+      const baseLabel = `${contract.code} ${contract.days} 天${describeOptionType(type)}`;
+      const baseCsvLabel = `${contract.code} ${contract.days} Days ${type === "call" ? "Call" : "Put"} Premium`;
+      const columns = [
+        {
+          ...contract,
+          type,
+          priceSource: "manual",
+          label: `${baseLabel} 手动F`,
+          csvLabel: `${baseCsvLabel} Manual F`,
+        },
+      ];
+
+      if (hasLivePrice) {
+        columns.push({
+          ...contract,
+          type,
+          priceSource: "live",
+          label: `${baseLabel} 实时F`,
+          csvLabel: `${baseCsvLabel} Live F`,
+        });
+      }
+      return columns;
+    }),
   );
 }
 
-function buildLiveRow(columns, volatility, riskFreeRate) {
-  if (!latestQuote?.price || latestQuote.price <= 0) {
-    return null;
-  }
+function hasUsableLivePrice() {
+  return quoteSettings.enabled && Number.isFinite(latestQuote?.price) && latestQuote.price > 0;
+}
 
-  const quotePrice = latestQuote.price;
-  return {
-    strike: `国际金价 ${formatQuotePrice(quotePrice)}`,
-    csvStrike: `Live CNY per Gram ${formatQuotePrice(quotePrice)}`,
-    premiums: columns.map((column) =>
-      calculatePremium(quotePrice, column.days, volatility, quotePrice, riskFreeRate, column.type),
-    ),
-    isLive: true,
-  };
+function getColumnFuturePrice(column, manualFuturePrice) {
+  return column.priceSource === "live" && hasUsableLivePrice() ? latestQuote.price : manualFuturePrice;
 }
 
 function calculateAll() {
@@ -387,16 +398,15 @@ function calculateAll() {
   const volatility = parsePercent("volatility", "隐含波动率");
   const riskFreeRate = parsePercent("risk-free-rate", "无风险利率");
   const strikes = collectStrikes();
-  const liveRow = buildLiveRow(columns, volatility, riskFreeRate);
 
   const rows = strikes.map((strike) => ({
     strike: displayNumber(strike),
     premiums: columns.map((column) =>
-      calculatePremium(futurePrice, column.days, volatility, strike, riskFreeRate, column.type),
+      calculatePremium(getColumnFuturePrice(column, futurePrice), column.days, volatility, strike, riskFreeRate, column.type),
     ),
   }));
 
-  lastResult = { columns, liveRow, rows };
+  lastResult = { columns, rows };
   renderTable(lastResult);
   saveSettings();
   saveContracts();
@@ -420,10 +430,6 @@ function renderTable(result) {
   result.columns.forEach((column) => headerRow.append(createHeaderCell(column.label)));
   resultHead.append(headerRow);
 
-  if (result.liveRow) {
-    resultBody.append(createResultRow(result.liveRow));
-  }
-
   result.rows.forEach((row) => {
     resultBody.append(createResultRow(row));
   });
@@ -431,9 +437,6 @@ function renderTable(result) {
 
 function createResultRow(row) {
   const tableRow = document.createElement("tr");
-  if (row.isLive) {
-    tableRow.className = "live-row";
-  }
   tableRow.append(createCell(row.strike));
   row.premiums.forEach((premium) => tableRow.append(createCell(formatPremium(premium))));
   return tableRow;
@@ -465,8 +468,7 @@ function copyResults() {
 
   const headers = ["Strike", ...lastResult.columns.map((column) => column.csvLabel)];
   const lines = [headers.join(",")];
-  const rows = lastResult.liveRow ? [lastResult.liveRow, ...lastResult.rows] : lastResult.rows;
-  rows.forEach((row) => {
+  lastResult.rows.forEach((row) => {
     lines.push([row.csvStrike ?? row.strike, ...row.premiums.map(formatPremium)].join(","));
   });
 

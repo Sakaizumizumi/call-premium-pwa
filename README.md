@@ -26,7 +26,7 @@ The app is static and uses relative paths, so it works under a repository Pages 
 
 ## Realtime International Gold Quote
 
-The realtime row fetches international gold and USD/CNY directly from:
+Realtime F columns fetch international gold and USD/CNY directly from:
 
 ```text
 https://api.gold-api.com/price/XAU
@@ -41,4 +41,4 @@ The app converts XAU/USD to CNY per gram:
 CNY/g = XAU/USD * USD/CNY / 31.1034768
 ```
 
-The realtime row calculates an ATM premium using the converted CNY/g price as both the futures price and strike price.
+When a realtime quote is available, each premium column is paired with a 手动F column and a 实时F column. 手动F uses the futures price entered in the form; 实时F uses the converted CNY/g price as the futures price while keeping each row's strike price.
