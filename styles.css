@@ -420,6 +420,14 @@ thead th {
   background: var(--surface-2);
   color: var(--text);
   font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  white-space: pre-line;
+}
+
+thead th:first-child {
+  text-align: left;
+  white-space: nowrap;
 }
 
 tbody tr:nth-child(even) {

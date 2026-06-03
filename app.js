@@ -355,14 +355,14 @@ function buildPremiumColumns(contractColumns, optionType) {
   const hasLivePrice = hasUsableLivePrice();
   return contractColumns.flatMap((contract) =>
     selectedTypes.flatMap((type) => {
-      const baseLabel = `${contract.code} ${contract.days} 天${describeOptionType(type)}`;
+      const baseLabel = `${contract.code}\n${contract.days}天${describeOptionType(type)}`;
       const baseCsvLabel = `${contract.code} ${contract.days} Days ${type === "call" ? "Call" : "Put"} Premium`;
       const columns = [
         {
           ...contract,
           type,
           priceSource: "manual",
-          label: `${baseLabel} 手动F`,
+          label: `${baseLabel}\n手动F`,
           csvLabel: `${baseCsvLabel} Manual F`,
         },
       ];
@@ -372,7 +372,7 @@ function buildPremiumColumns(contractColumns, optionType) {
           ...contract,
           type,
           priceSource: "live",
-          label: `${baseLabel} 实时F`,
+          label: `${baseLabel}\n实时F`,
           csvLabel: `${baseCsvLabel} Live F`,
         });
       }
