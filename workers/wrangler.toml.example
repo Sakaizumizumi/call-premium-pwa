@@ -1,9 +1,0 @@
-name = "call-premium-gold-quote"
-main = "gold-main-quote.js"
-compatibility_date = "2026-06-03"
-
-[vars]
-ITICK_SYMBOL = "au0"
-ITICK_REGION = "CN"
-QUOTE_NAME = "上期所黄金主连"
-QUOTE_SOURCE = "iTick"

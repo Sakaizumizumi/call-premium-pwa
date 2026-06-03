@@ -24,27 +24,14 @@ After pushing the repository to GitHub:
 
 The app is static and uses relative paths, so it works under a repository Pages path such as `/call-premium-pwa/`.
 
-## Realtime Gold Main Quote
+## Realtime International Gold Quote
 
-The PWA can show a realtime ATM premium row using a quote proxy. Keep API tokens out of GitHub Pages and deploy the Cloudflare Worker in `workers/gold-main-quote.js`.
-
-1. Copy `workers/wrangler.toml.example` to `workers/wrangler.toml`.
-2. Set the iTick token as a Worker secret:
-
-```powershell
-wrangler secret put ITICK_TOKEN
-```
-
-3. Deploy the Worker from the `workers` folder:
-
-```powershell
-wrangler deploy
-```
-
-4. In the PWA, paste the Worker endpoint into 行情代理, for example:
+The realtime row fetches international gold directly from:
 
 ```text
-https://your-worker.workers.dev/quote/gold-main
+https://api.gold-api.com/price/XAU
 ```
 
-The Worker defaults to `ITICK_REGION=CN` and `ITICK_SYMBOL=au0`. If the data provider uses another code for 上期所黄金主连, change `ITICK_SYMBOL` in the Worker vars and redeploy.
+No Cloudflare Worker or API token is required. Enable 实时价 in the PWA and choose `1 秒`, `15 秒`, or `1 分钟` refresh.
+
+The quote is XAU/USD. The realtime row calculates an ATM premium using that same price as both the futures price and strike price.

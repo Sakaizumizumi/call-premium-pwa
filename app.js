@@ -14,10 +14,10 @@ const DEFAULT_CONTRACTS = [
 ];
 
 const DEFAULT_OPTION_TYPE = "call";
+const DIRECT_GOLD_QUOTE_URL = "https://api.gold-api.com/price/XAU";
 const DEFAULT_QUOTE_SETTINGS = {
   enabled: false,
   intervalMs: 60000,
-  endpoint: "",
 };
 const QUOTE_INTERVALS = new Set([1000, 15000, 60000]);
 const SETTINGS_STORAGE_KEY = "call-premium-pwa-settings-v2";
@@ -42,7 +42,6 @@ const resetContractsButton = document.querySelector("#reset-contracts-button");
 const todayLabel = document.querySelector("#today-label");
 const quoteEnabledInput = document.querySelector("#quote-enabled");
 const quoteIntervalInput = document.querySelector("#quote-interval");
-const quoteEndpointInput = document.querySelector("#quote-endpoint");
 const quoteSummary = document.querySelector("#quote-summary");
 const quoteStatus = document.querySelector("#quote-status");
 const optionTypeInputs = Array.from(document.querySelectorAll('input[name="option-type"]'));
@@ -363,8 +362,9 @@ function buildLiveRow(columns, volatility, riskFreeRate) {
   }
 
   const quotePrice = latestQuote.price;
+  const quoteLabel = latestQuote.symbol === "XAU" ? "国际金价" : "实时价";
   return {
-    strike: `实时价 ${formatQuotePrice(quotePrice)}`,
+    strike: `${quoteLabel} ${formatQuotePrice(quotePrice)}`,
     csvStrike: `Live Price ${formatQuotePrice(quotePrice)}`,
     premiums: columns.map((column) =>
       calculatePremium(quotePrice, column.days, volatility, quotePrice, riskFreeRate, column.type),
@@ -580,7 +580,6 @@ function normalizeQuoteSettings(settings) {
   return {
     enabled: Boolean(settings?.enabled),
     intervalMs: QUOTE_INTERVALS.has(intervalMs) ? intervalMs : DEFAULT_QUOTE_SETTINGS.intervalMs,
-    endpoint: String(settings?.endpoint ?? "").trim(),
   };
 }
 
@@ -593,6 +592,7 @@ function loadQuoteSettings() {
 
   try {
     quoteSettings = normalizeQuoteSettings(JSON.parse(saved));
+    saveQuoteSettings();
   } catch {
     quoteSettings = { ...DEFAULT_QUOTE_SETTINGS };
   }
@@ -605,7 +605,6 @@ function saveQuoteSettings() {
 function renderQuoteSettings() {
   quoteEnabledInput.checked = quoteSettings.enabled;
   quoteIntervalInput.value = String(quoteSettings.intervalMs);
-  quoteEndpointInput.value = quoteSettings.endpoint;
   updateQuoteStatus();
 }
 
@@ -613,17 +612,12 @@ function readQuoteSettingsFromForm() {
   quoteSettings = normalizeQuoteSettings({
     enabled: quoteEnabledInput.checked,
     intervalMs: quoteIntervalInput.value,
-    endpoint: quoteEndpointInput.value,
   });
   saveQuoteSettings();
 }
 
 function resolveQuoteEndpoint() {
-  const endpoint = quoteSettings.endpoint.trim();
-  if (!endpoint) {
-    return "";
-  }
-  return new URL(endpoint, window.location.href).toString();
+  return DIRECT_GOLD_QUOTE_URL;
 }
 
 function updateQuoteStatus(message = "", isError = false) {
@@ -637,14 +631,7 @@ function updateQuoteStatus(message = "", isError = false) {
 
   if (!quoteSettings.enabled) {
     quoteSummary.textContent = "已暂停";
-    quoteStatus.textContent = "启用后会按所选频率刷新黄金主连价格。";
-    return;
-  }
-
-  if (!quoteSettings.endpoint) {
-    quoteSummary.textContent = "未配置";
-    quoteStatus.textContent = "请先填写 Cloudflare Worker 代理地址。";
-    quoteStatus.classList.add("error");
+    quoteStatus.textContent = "启用后会按所选频率刷新国际金价 XAU/USD。";
     return;
   }
 
@@ -658,7 +645,7 @@ function updateQuoteStatus(message = "", isError = false) {
 
   if (latestQuote) {
     quoteSummary.textContent = `${formatQuotePrice(latestQuote.price)}`;
-    quoteStatus.textContent = `${latestQuote.name || latestQuote.symbol || "黄金主连"} · ${formatQuoteTime(latestQuote.quoteTime)} · ${latestQuote.source || "行情源"}`;
+    quoteStatus.textContent = `${latestQuote.name || latestQuote.symbol || "国际金价"} · ${formatQuoteTime(latestQuote.quoteTime)} · ${latestQuote.source || "行情源"}`;
     return;
   }
 
@@ -670,7 +657,7 @@ function restartQuotePolling(fetchImmediately = true) {
   stopQuotePolling();
   updateQuoteStatus();
 
-  if (!quoteSettings.enabled || !quoteSettings.endpoint || !navigator.onLine) {
+  if (!quoteSettings.enabled || !navigator.onLine) {
     return;
   }
 
@@ -693,18 +680,13 @@ async function fetchLatestQuote() {
   }
 
   const endpoint = resolveQuoteEndpoint();
-  if (!endpoint) {
-    updateQuoteStatus("请先填写 Cloudflare Worker 代理地址。", true);
-    return;
-  }
-
   quoteFetchInFlight = true;
-  updateQuoteStatus("正在刷新黄金主连价格...");
+  updateQuoteStatus("正在刷新国际金价 XAU/USD...");
 
   try {
     const response = await fetch(endpoint, { cache: "no-store" });
     if (!response.ok) {
-      throw new Error(`行情代理返回 ${response.status}`);
+      throw new Error(`行情接口返回 ${response.status}`);
     }
 
     const data = await response.json();
@@ -714,11 +696,11 @@ async function fetchLatestQuote() {
     }
 
     latestQuote = {
-      symbol: String(data.symbol ?? "au0"),
-      name: String(data.name ?? "上期所黄金主连"),
+      symbol: String(data.symbol ?? "XAU"),
+      name: `国际金价 ${data.symbol ?? "XAU"}/${data.currency ?? "USD"}`,
       price,
-      quoteTime: data.quoteTime ?? data.time ?? null,
-      source: String(data.source ?? "iTick"),
+      quoteTime: normalizeQuoteTime(data.quoteTime ?? data.timestamp ?? data.updatedAt ?? data.updated_at ?? data.time),
+      source: String(data.source ?? "Gold API"),
       stale: Boolean(data.stale),
       fetchedAt: new Date().toISOString(),
     };
@@ -732,6 +714,21 @@ async function fetchLatestQuote() {
   } finally {
     quoteFetchInFlight = false;
   }
+}
+
+function normalizeQuoteTime(value) {
+  if (!value) {
+    return new Date().toISOString();
+  }
+
+  if (typeof value === "number" || /^\d+$/.test(String(value))) {
+    const numericValue = Number(value);
+    const milliseconds = numericValue < 10_000_000_000 ? numericValue * 1000 : numericValue;
+    return new Date(milliseconds).toISOString();
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
 function handleQuoteSettingsChange() {
@@ -771,7 +768,6 @@ optionTypeInputs.forEach((input) => input.addEventListener("change", runCalculat
 contractSelects.forEach((select) => select.addEventListener("change", runCalculation));
 quoteEnabledInput.addEventListener("change", handleQuoteSettingsChange);
 quoteIntervalInput.addEventListener("change", handleQuoteSettingsChange);
-quoteEndpointInput.addEventListener("change", handleQuoteSettingsChange);
 
 window.addEventListener("online", handleOnlineStatusChange);
 window.addEventListener("offline", handleOnlineStatusChange);
