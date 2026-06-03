@@ -15,6 +15,8 @@ const DEFAULT_CONTRACTS = [
 
 const DEFAULT_OPTION_TYPE = "call";
 const DIRECT_GOLD_QUOTE_URL = "https://api.gold-api.com/price/XAU";
+const DIRECT_FX_QUOTE_URL = "https://api.frankfurter.dev/v2/rate/USD/CNY";
+const TROY_OUNCE_GRAMS = 31.1034768;
 const DEFAULT_QUOTE_SETTINGS = {
   enabled: false,
   intervalMs: 60000,
@@ -303,6 +305,10 @@ function formatQuotePrice(value) {
   return Number(value).toFixed(PRECISION);
 }
 
+function formatFxRate(value) {
+  return Number(value).toFixed(4);
+}
+
 function formatQuoteTime(value) {
   if (!value) {
     return "时间未知";
@@ -362,10 +368,9 @@ function buildLiveRow(columns, volatility, riskFreeRate) {
   }
 
   const quotePrice = latestQuote.price;
-  const quoteLabel = latestQuote.symbol === "XAU" ? "国际金价" : "实时价";
   return {
-    strike: `${quoteLabel} ${formatQuotePrice(quotePrice)}`,
-    csvStrike: `Live Price ${formatQuotePrice(quotePrice)}`,
+    strike: `国际金价 ${formatQuotePrice(quotePrice)}`,
+    csvStrike: `Live CNY per Gram ${formatQuotePrice(quotePrice)}`,
     premiums: columns.map((column) =>
       calculatePremium(quotePrice, column.days, volatility, quotePrice, riskFreeRate, column.type),
     ),
@@ -631,7 +636,7 @@ function updateQuoteStatus(message = "", isError = false) {
 
   if (!quoteSettings.enabled) {
     quoteSummary.textContent = "已暂停";
-    quoteStatus.textContent = "启用后会按所选频率刷新国际金价 XAU/USD。";
+    quoteStatus.textContent = "启用后会按所选频率刷新国际金价，并换算成人民币/克。";
     return;
   }
 
@@ -645,7 +650,7 @@ function updateQuoteStatus(message = "", isError = false) {
 
   if (latestQuote) {
     quoteSummary.textContent = `${formatQuotePrice(latestQuote.price)}`;
-    quoteStatus.textContent = `${latestQuote.name || latestQuote.symbol || "国际金价"} · ${formatQuoteTime(latestQuote.quoteTime)} · ${latestQuote.source || "行情源"}`;
+    quoteStatus.textContent = `${latestQuote.name || latestQuote.symbol || "国际金价"} · ${formatQuoteTime(latestQuote.quoteTime)} · USD/CNY ${formatFxRate(latestQuote.usdCnyRate)} · ${latestQuote.source || "行情源"}`;
     return;
   }
 
@@ -681,27 +686,33 @@ async function fetchLatestQuote() {
 
   const endpoint = resolveQuoteEndpoint();
   quoteFetchInFlight = true;
-  updateQuoteStatus("正在刷新国际金价 XAU/USD...");
+  updateQuoteStatus("正在刷新国际金价和美元人民币汇率...");
 
   try {
-    const response = await fetch(endpoint, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`行情接口返回 ${response.status}`);
+    const [goldData, fxData] = await Promise.all([
+      fetchJson(endpoint, "国际金价接口"),
+      fetchJson(DIRECT_FX_QUOTE_URL, "美元人民币汇率接口"),
+    ]);
+    const goldPriceUsdPerOunce = Number(goldData.price);
+    const usdCnyRate = parseUsdCnyRate(fxData);
+    if (!Number.isFinite(goldPriceUsdPerOunce) || goldPriceUsdPerOunce <= 0) {
+      throw new Error("国际金价无效");
     }
-
-    const data = await response.json();
-    const price = Number(data.price);
-    if (!Number.isFinite(price) || price <= 0) {
-      throw new Error("行情价格无效");
+    if (!Number.isFinite(usdCnyRate) || usdCnyRate <= 0) {
+      throw new Error("美元人民币汇率无效");
     }
+    const priceCnyPerGram = goldPriceUsdPerOunce * usdCnyRate / TROY_OUNCE_GRAMS;
 
     latestQuote = {
-      symbol: String(data.symbol ?? "XAU"),
-      name: `国际金价 ${data.symbol ?? "XAU"}/${data.currency ?? "USD"}`,
-      price,
-      quoteTime: normalizeQuoteTime(data.quoteTime ?? data.timestamp ?? data.updatedAt ?? data.updated_at ?? data.time),
-      source: String(data.source ?? "Gold API"),
-      stale: Boolean(data.stale),
+      symbol: "XAU-CNY-G",
+      name: "国际金价 人民币/克",
+      price: priceCnyPerGram,
+      quoteTime: normalizeQuoteTime(goldData.quoteTime ?? goldData.timestamp ?? goldData.updatedAt ?? goldData.updated_at ?? goldData.time),
+      source: "Gold API + Frankfurter",
+      stale: Boolean(goldData.stale),
+      goldPriceUsdPerOunce,
+      usdCnyRate,
+      fxDate: fxData.date ?? null,
       fetchedAt: new Date().toISOString(),
     };
     updateQuoteStatus();
@@ -714,6 +725,18 @@ async function fetchLatestQuote() {
   } finally {
     quoteFetchInFlight = false;
   }
+}
+
+async function fetchJson(url, label) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`${label}返回 ${response.status}`);
+  }
+  return response.json();
+}
+
+function parseUsdCnyRate(data) {
+  return Number(data.rate ?? data.rates?.CNY);
 }
 
 function normalizeQuoteTime(value) {

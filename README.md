@@ -26,12 +26,19 @@ The app is static and uses relative paths, so it works under a repository Pages 
 
 ## Realtime International Gold Quote
 
-The realtime row fetches international gold directly from:
+The realtime row fetches international gold and USD/CNY directly from:
 
 ```text
 https://api.gold-api.com/price/XAU
+https://api.frankfurter.dev/v2/rate/USD/CNY
 ```
 
 No Cloudflare Worker or API token is required. Enable 实时价 in the PWA and choose `1 秒`, `15 秒`, or `1 分钟` refresh.
 
-The quote is XAU/USD. The realtime row calculates an ATM premium using that same price as both the futures price and strike price.
+The app converts XAU/USD to CNY per gram:
+
+```text
+CNY/g = XAU/USD * USD/CNY / 31.1034768
+```
+
+The realtime row calculates an ATM premium using the converted CNY/g price as both the futures price and strike price.
